@@ -1,5 +1,6 @@
 package com.vip.saturn.job.executor;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -11,14 +12,14 @@ public abstract class SaturnExecutorExtension {
 
 	protected String executorName;
 	protected String namespace;
-	protected ClassLoader jobClassLoader;
+	protected List<ClassLoader> jobClassLoaders;
 	protected ClassLoader executorClassLoader;
 
 	public SaturnExecutorExtension(String executorName, String namespace, ClassLoader executorClassLoader,
-			ClassLoader jobClassLoader) {
+			List<ClassLoader> jobClassLoaders) {
 		this.executorName = executorName;
 		this.namespace = namespace;
-		this.jobClassLoader = jobClassLoader;
+		this.jobClassLoaders = jobClassLoaders;
 		this.executorClassLoader = executorClassLoader;
 	}
 

@@ -9,6 +9,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 
 /**
@@ -28,13 +30,13 @@ public class SaturnExecutorService {
 	private SaturnExecutorExtension saturnExecutorExtension;
 
 	private String ipNode;
-	private ClassLoader jobClassLoader;
+	private List<ClassLoader> jobClassLoaders;
 	private ClassLoader executorClassLoader;
 	private InitNewJobService initNewJobService;
 	private ExecutorConfigService executorConfigService;
 	private RestartAndDumpService restartExecutorService;
 
-	private Object saturnApplication;
+	private Map<ClassLoader,Object> saturnApplications;
 
 	public SaturnExecutorService(CoordinatorRegistryCenter coordinatorRegistryCenter, String executorName,
 			SaturnExecutorExtension saturnExecutorExtension) {
@@ -235,12 +237,12 @@ public class SaturnExecutorService {
 		return ipNode;
 	}
 
-	public ClassLoader getJobClassLoader() {
-		return jobClassLoader;
+	public List<ClassLoader> getJobClassLoaders() {
+		return jobClassLoaders;
 	}
 
-	public void setJobClassLoader(ClassLoader jobClassLoader) {
-		this.jobClassLoader = jobClassLoader;
+	public void setJobClassLoaders(List<ClassLoader> jobClassLoaders) {
+		this.jobClassLoaders = jobClassLoaders;
 	}
 
 	public ClassLoader getExecutorClassLoader() {
@@ -275,11 +277,11 @@ public class SaturnExecutorService {
 		return executorConfigService == null ? new ExecutorConfig() : executorConfigService.getExecutorConfig();
 	}
 
-	public Object getSaturnApplication() {
-		return saturnApplication;
+	public Map<ClassLoader, Object> getSaturnApplications() {
+		return saturnApplications;
 	}
 
-	public void setSaturnApplication(Object saturnApplication) {
-		this.saturnApplication = saturnApplication;
+	public void setSaturnApplications(Map<ClassLoader, Object> saturnApplications) {
+		this.saturnApplications = saturnApplications;
 	}
 }

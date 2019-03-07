@@ -156,7 +156,9 @@ public class AbstractSaturnIT {
 		 * classloaders.put(executorName,saturnClassloader); }
 		 */
 		String[] args = {"-namespace", NAMESPACE, "-executorName", executorName};
-		main.launchInner(args, Main.class.getClassLoader(), Main.class.getClassLoader());
+		List<ClassLoader> classLoaders = new ArrayList<>();
+		classLoaders.add(Main.class.getClassLoader());
+		main.launchInner(args, Main.class.getClassLoader(),classLoaders);
 		saturnExecutorList.add(main);
 		Thread.sleep(1000);
 		return main;
@@ -173,7 +175,9 @@ public class AbstractSaturnIT {
 			main = new Main();
 			String executorName = "executorName" + index;
 			String[] args = {"-namespace", NAMESPACE, "-executorName", executorName};
-			main.launchInner(args, Main.class.getClassLoader(), Main.class.getClassLoader());
+			List<ClassLoader> classLoaders = new ArrayList<>();
+			classLoaders.add(Main.class.getClassLoader());
+			main.launchInner(args, Main.class.getClassLoader(),classLoaders);
 			saturnExecutorList.set(index, main);
 			Thread.sleep(1000);
 			return main;

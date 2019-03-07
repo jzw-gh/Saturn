@@ -65,9 +65,9 @@ public class SaturnExecutor {
 
 	private ClassLoader executorClassLoader;
 
-	private ClassLoader jobClassLoader;
+	private List<ClassLoader> jobClassLoaders;
 
-	private Object saturnApplication;
+	private  Map<ClassLoader,Object> saturnApplications;
 
 	private SaturnExecutorService saturnExecutorService;
 
@@ -88,12 +88,12 @@ public class SaturnExecutor {
 	private ExecutorService shutdownJobsExecutorService;
 
 	private SaturnExecutor(String namespace, String executorName, ClassLoader executorClassLoader,
-			ClassLoader jobClassLoader, Object saturnApplication) {
+			List<ClassLoader> jobClassLoaders, Map<ClassLoader,Object> saturnApplications) {
 		this.executorName = executorName;
 		this.namespace = namespace;
 		this.executorClassLoader = executorClassLoader;
-		this.jobClassLoader = jobClassLoader;
-		this.saturnApplication = saturnApplication;
+		this.jobClassLoaders = jobClassLoaders;
+		this.saturnApplications = saturnApplications;
 		this.raiseAlarmExecutorService = Executors
 				.newSingleThreadExecutor(new SaturnThreadFactory(executorName + "-raise-alarm-thread", false));
 		this.shutdownJobsExecutorService = Executors
@@ -173,7 +173,7 @@ public class SaturnExecutor {
 	 * SaturnExecutor工厂入口
 	 */
 	public static SaturnExecutor buildExecutor(String namespace, String executorName, ClassLoader executorClassLoader,
-			ClassLoader jobClassLoader, Object saturnApplication) {
+			List<ClassLoader> jobClassLoaders, Map<ClassLoader,Object> saturnApplications) {
 		if ("$SaturnSelf".equals(namespace)) {
 			throw new RuntimeException("The namespace cannot be $SaturnSelf");
 		}
@@ -185,45 +185,57 @@ public class SaturnExecutor {
 			}
 			executorName = hostName;// NOSONAR
 		}
-		init(executorName, namespace, executorClassLoader, jobClassLoader);
-		if (saturnApplication == null) {
-			saturnApplication = validateAndLoadSaturnApplication(jobClassLoader);
-		}
-		return new SaturnExecutor(namespace, executorName, executorClassLoader, jobClassLoader, saturnApplication);
+		init(executorName, namespace, executorClassLoader, jobClassLoaders);
+		return new SaturnExecutor(namespace, executorName, executorClassLoader, jobClassLoaders, validateAndLoadSaturnApplication(jobClassLoaders,saturnApplications));
 	}
 
 	/*
 	 * Try to parse the SaturnApplication from saturn.properties. If SaturnApplication is defined then call the method 'init'.
 	 * This method should be called after logger is initialized.
 	 */
-	private static Object validateAndLoadSaturnApplication(ClassLoader jobClassLoader) {
-		try {
-			Properties properties = getSaturnProperty(jobClassLoader);
-			if (properties == null) {
-				return null;
-			}
-			String appClassStr = properties.getProperty("app.class");
-			if (StringUtils.isBlank(appClassStr)) {
-				return null;
-			}
+	private static Map<ClassLoader,Object> validateAndLoadSaturnApplication(List<ClassLoader> jobClassLoaders,Map<ClassLoader,Object> saturnApplicationMap) {
 
-			appClassStr = appClassStr.trim();
-			ClassLoader oldCL = Thread.currentThread().getContextClassLoader();
-			try {
-				Thread.currentThread().setContextClassLoader(jobClassLoader);
-				Class<?> appClass = jobClassLoader.loadClass(appClassStr);
-				Class<?> saturnApplicationClass = jobClassLoader.loadClass(SATURN_APPLICATION_CLASS);
-				if (saturnApplicationClass.isAssignableFrom(appClass)) {
-					Object saturnApplication = appClass.newInstance();
-					appClass.getMethod("init").invoke(saturnApplication);
-					LogUtils.info(log, LogEvents.ExecutorEvent.INIT, "SaturnApplication init successfully");
-					return saturnApplication;
-				} else {
-					throw new RuntimeException(
-							"the app.class " + appClassStr + " must be instance of " + SATURN_APPLICATION_CLASS);
+		if(saturnApplicationMap == null){
+			saturnApplicationMap = new HashMap<>();
+			for(ClassLoader jobClassLoader:jobClassLoaders){
+				saturnApplicationMap.put(jobClassLoader,null);
+			}
+		}
+
+		try {
+			for(ClassLoader jobClassLoader:jobClassLoaders){
+				if(saturnApplicationMap.get(jobClassLoader)!=null){
+					continue;
 				}
-			} finally {
-				Thread.currentThread().setContextClassLoader(oldCL);
+				Properties properties = getSaturnProperty(jobClassLoader);
+				if (properties == null) {
+					saturnApplicationMap.put(jobClassLoader,null);
+					continue;
+				}
+				String appClassStr = properties.getProperty("app.class");
+				if (StringUtils.isBlank(appClassStr)) {
+					saturnApplicationMap.put(jobClassLoader,null);
+					continue;
+				}
+
+				appClassStr = appClassStr.trim();
+				ClassLoader oldCL = Thread.currentThread().getContextClassLoader();
+				try {
+					Thread.currentThread().setContextClassLoader(jobClassLoader);
+					Class<?> appClass = jobClassLoader.loadClass(appClassStr);
+					Class<?> saturnApplicationClass = jobClassLoader.loadClass(SATURN_APPLICATION_CLASS);
+					if (saturnApplicationClass.isAssignableFrom(appClass)) {
+						Object saturnApplication = appClass.newInstance();
+						appClass.getMethod("init").invoke(saturnApplication);
+						LogUtils.info(log, LogEvents.ExecutorEvent.INIT, "SaturnApplication init successfully");
+						saturnApplicationMap.put(jobClassLoader,saturnApplication);
+					} else {
+						throw new RuntimeException(
+								"the app.class " + appClassStr + " must be instance of " + SATURN_APPLICATION_CLASS);
+					}
+				} finally {
+					Thread.currentThread().setContextClassLoader(oldCL);
+				}
 			}
 		} catch (RuntimeException e) {
 			LogUtils.error(log, LogEvents.ExecutorEvent.INIT, "Fail to load SaturnApplication", e);
@@ -232,6 +244,8 @@ public class SaturnExecutor {
 			LogUtils.error(log, LogEvents.ExecutorEvent.INIT, "Fail to load SaturnApplication", e);
 			throw new RuntimeException(e);
 		}
+
+		return saturnApplicationMap;
 	}
 
 	private static Properties getSaturnProperty(ClassLoader jobClassLoader) throws IOException {
@@ -266,17 +280,17 @@ public class SaturnExecutor {
 	}
 
 	private static void init(String executorName, String namespace, ClassLoader executorClassLoader,
-			ClassLoader jobClassLoader) {
+			List<ClassLoader> jobClassLoaders) {
 		if (!inited.compareAndSet(false, true)) {
 			return;
 		}
-		initExtension(executorName, namespace, executorClassLoader, jobClassLoader);
+		initExtension(executorName, namespace, executorClassLoader, jobClassLoaders);
 		saturnExecutorExtension.init(); // will init log, env, etc
 		log = LoggerFactory.getLogger(SaturnExecutor.class);
 	}
 
 	private static synchronized void initExtension(String executorName, String namespace,
-			ClassLoader executorClassLoader, ClassLoader jobClassLoader) {
+			ClassLoader executorClassLoader, List<ClassLoader> jobClassLoaders) {
 		try {
 			Properties props = ResourceUtils.getResource("properties/saturn-ext.properties");
 			String extClass = props.getProperty("saturn.ext");
@@ -286,14 +300,14 @@ public class SaturnExecutor {
 				Constructor<SaturnExecutorExtension> constructor = loadClass
 						.getConstructor(String.class, String.class, ClassLoader.class, ClassLoader.class);
 				saturnExecutorExtension = constructor
-						.newInstance(executorName, namespace, executorClassLoader, jobClassLoader);
+						.newInstance(executorName, namespace, executorClassLoader, jobClassLoaders);
 			}
 		} catch (Exception e) { // NOSONAR log is not allowed to use, before saturnExecutorExtension.init().
 			e.printStackTrace(); // NOSONAR
 		} finally {
 			if (saturnExecutorExtension == null) {
 				saturnExecutorExtension = new SaturnExecutorExtensionDefault(executorName, namespace,
-						executorClassLoader, jobClassLoader);
+						executorClassLoader, jobClassLoaders);
 			}
 		}
 	}
@@ -478,9 +492,9 @@ public class SaturnExecutor {
 
 			// 创建SaturnExecutorService
 			saturnExecutorService = new SaturnExecutorService(regCenter, executorName, saturnExecutorExtension);
-			saturnExecutorService.setJobClassLoader(jobClassLoader);
+			saturnExecutorService.setJobClassLoaders(jobClassLoaders);
 			saturnExecutorService.setExecutorClassLoader(executorClassLoader);
-			saturnExecutorService.setSaturnApplication(saturnApplication);
+			saturnExecutorService.setSaturnApplications(saturnApplications);
 
 			StartCheckUtil.setOk(StartCheckItem.ZK);
 		} catch (Exception e) {
@@ -665,20 +679,27 @@ public class SaturnExecutor {
 				}
 			}
 
-			if (saturnApplication != null) {
-				ClassLoader oldCL = Thread.currentThread().getContextClassLoader();
-				try {
-					Thread.currentThread().setContextClassLoader(jobClassLoader);
-					saturnApplication.getClass().getMethod("destroy").invoke(saturnApplication);
-					LogUtils.info(log, LogEvents.ExecutorEvent.GRACEFUL_SHUTDOWN,
-							"SaturnApplication destroy successfully");
-				} catch (Throwable t) {
-					LogUtils.error(log, LogEvents.ExecutorEvent.GRACEFUL_SHUTDOWN, "SaturnApplication destroy error",
-							t);
-				} finally {
-					Thread.currentThread().setContextClassLoader(oldCL);
+			if(saturnApplications!=null&&saturnApplications.size()>0){
+				for(Map.Entry<ClassLoader,Object> entry:saturnApplications.entrySet()){
+					Object saturnApplication = entry.getValue();
+					ClassLoader jobClassLoader = entry.getKey();
+					if (saturnApplication != null) {
+						ClassLoader oldCL = Thread.currentThread().getContextClassLoader();
+						try {
+							Thread.currentThread().setContextClassLoader(jobClassLoader);
+							saturnApplication.getClass().getMethod("destroy").invoke(saturnApplication);
+							LogUtils.info(log, LogEvents.ExecutorEvent.GRACEFUL_SHUTDOWN,
+									"SaturnApplication destroy successfully");
+						} catch (Throwable t) {
+							LogUtils.error(log, LogEvents.ExecutorEvent.GRACEFUL_SHUTDOWN, "SaturnApplication destroy error",
+									t);
+						} finally {
+							Thread.currentThread().setContextClassLoader(oldCL);
+						}
+					}
 				}
 			}
+
 
 			LogUtils.info(log, LogEvents.ExecutorEvent.GRACEFUL_SHUTDOWN, "executor {} is stopped gracefully",
 					executorName);

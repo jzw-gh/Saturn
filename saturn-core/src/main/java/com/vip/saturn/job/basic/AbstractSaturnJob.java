@@ -8,6 +8,7 @@ import com.vip.saturn.job.SaturnSystemReturnCode;
 import com.vip.saturn.job.exception.JobException;
 import com.vip.saturn.job.executor.SaturnExecutorService;
 import com.vip.saturn.job.internal.statistics.ProcessCountStatistics;
+import com.vip.saturn.job.utils.ClassLoaderUtils;
 import com.vip.saturn.job.utils.LogUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -217,7 +218,7 @@ public abstract class AbstractSaturnJob extends AbstractElasticJob {
 				throw new JobException("the job business instance is not initialized");
 			}
 			ClassLoader oldClassLoader = Thread.currentThread().getContextClassLoader();
-			ClassLoader jobClassLoader = saturnExecutorService.getJobClassLoader();
+			ClassLoader jobClassLoader = ClassLoaderUtils.findClassLoader(jobBusinessInstance,saturnExecutorService.getJobClassLoaders());
 			Thread.currentThread().setContextClassLoader(jobClassLoader);
 			try {
 				final Class<?> saturnJobExecutionContextClazz = jobClassLoader
@@ -235,7 +236,7 @@ public abstract class AbstractSaturnJob extends AbstractElasticJob {
 	protected Object tryToGetSaturnBusinessInstanceFromSaturnApplication(ClassLoader jobClassLoader,
 			Class<?> jobClass) {
 		try {
-			Object saturnApplication = saturnExecutorService.getSaturnApplication();
+			Object saturnApplication = saturnExecutorService.getSaturnApplications().get(jobClassLoader);
 			if (saturnApplication != null) {
 				Class<?> ssaClazz = jobClassLoader
 						.loadClass("com.vip.saturn.job.application.AbstractSaturnApplication");

@@ -13,6 +13,7 @@ import com.vip.saturn.job.utils.SystemEnvProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -27,8 +28,8 @@ public class SaturnExecutorExtensionDefault extends SaturnExecutorExtension {
 	private static final String NAME_VIP_SATURN_LOG_DIR = "VIP_SATURN_LOG_DIR";
 
 	public SaturnExecutorExtensionDefault(String executorName, String namespace, ClassLoader executorClassLoader,
-			ClassLoader jobClassLoader) {
-		super(executorName, namespace, executorClassLoader, jobClassLoader);
+										  List<ClassLoader> jobClassLoaders) {
+		super(executorName, namespace, executorClassLoader, jobClassLoaders);
 	}
 
 	@Override

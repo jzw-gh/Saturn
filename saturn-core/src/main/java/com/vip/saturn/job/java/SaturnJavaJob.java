@@ -7,6 +7,7 @@ import com.vip.saturn.job.basic.AbstractSaturnJob;
 import com.vip.saturn.job.basic.SaturnApi;
 import com.vip.saturn.job.basic.SaturnExecutionContext;
 import com.vip.saturn.job.exception.JobInitAlarmException;
+import com.vip.saturn.job.utils.ClassLoaderUtils;
 import com.vip.saturn.job.utils.LogUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
@@ -40,7 +41,9 @@ public class SaturnJavaJob extends AbstractSaturnJob {
 	private void getJobVersionIfNecessary() {
 		if (jobBusinessInstance != null) {
 			ClassLoader oldClassLoader = Thread.currentThread().getContextClassLoader();
-			Thread.currentThread().setContextClassLoader(saturnExecutorService.getJobClassLoader());
+			Thread.currentThread().setContextClassLoader(
+					ClassLoaderUtils.findClassLoader(jobBusinessInstance,saturnExecutorService.getJobClassLoaders())
+			);
 			try {
 				String version = (String) jobBusinessInstance.getClass().getMethod("getJobVersion")
 						.invoke(jobBusinessInstance);
@@ -64,7 +67,7 @@ public class SaturnJavaJob extends AbstractSaturnJob {
 		LogUtils.info(log, jobName, "start to create job business instance, jobClass is {}", jobClassStr);
 		if (jobBusinessInstance == null) {
 			ClassLoader oldClassLoader = Thread.currentThread().getContextClassLoader();
-			ClassLoader jobClassLoader = saturnExecutorService.getJobClassLoader();
+			ClassLoader jobClassLoader = ClassLoaderUtils.findClassLoader(jobClassStr,saturnExecutorService.getJobClassLoaders());
 			Thread.currentThread().setContextClassLoader(jobClassLoader);
 			try {
 				Class<?> jobClass = jobClassLoader.loadClass(jobClassStr);

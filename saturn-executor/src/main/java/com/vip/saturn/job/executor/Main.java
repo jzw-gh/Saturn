@@ -1,5 +1,7 @@
 package com.vip.saturn.job.executor;
 
+import org.quartz.Job;
+
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
@@ -8,6 +10,7 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Entrance of Saturn executor.
@@ -22,7 +25,7 @@ public class Main {
 	private String saturnLibDir = getLibDir("lib");
 	private String appLibDir = getLibDir("lib");
 	private ClassLoader executorClassLoader;
-	private ClassLoader jobClassLoader;
+	private List<ClassLoader> jobClassLoaders;
 	private Object saturnExecutor;
 	private boolean executorClassLoaderShouldBeClosed;
 	private boolean jobClassLoaderShouldBeClosed;
@@ -32,7 +35,6 @@ public class Main {
 
 		for (int i = 0; i < args.length; i++) {
 			String param = args[i].trim();
-
 			switch (param) {
 				case "-namespace":
 					this.namespace = obtainParam(args, ++i, "namespace");
@@ -120,23 +122,33 @@ public class Main {
 		return urls;
 	}
 
-	private void initClassLoader(ClassLoader executorClassLoader, ClassLoader jobClassLoader) throws Exception {
+	private void initClassLoader(ClassLoader executorClassLoader, List<ClassLoader> jobClassLoaders) throws Exception {
 		setExecutorClassLoader(executorClassLoader);
-		setJobClassLoader(jobClassLoader);
+		setJobClassLoader(jobClassLoaders);
 	}
 
-	private void setJobClassLoader(ClassLoader jobClassLoader) throws MalformedURLException {
-		if (jobClassLoader == null) {
-			if (new File(appLibDir).isDirectory()) {
-				List<URL> urls = getUrls(new File(appLibDir));
-				this.jobClassLoader = new JobClassLoader(urls.toArray(new URL[urls.size()]));
-				this.jobClassLoaderShouldBeClosed = true;
-			} else {
-				this.jobClassLoader = this.executorClassLoader;
-				this.jobClassLoaderShouldBeClosed = false;
+	private void setJobClassLoader(List<ClassLoader> jobClassLoaders) throws MalformedURLException {
+		if (jobClassLoaders == null) {
+			jobClassLoaders = new ArrayList<>();
+			File appLibDirFile = new File(appLibDir);
+			if (appLibDirFile.isDirectory()) {
+				File[] subFiles = appLibDirFile.listFiles();
+				if(subFiles != null){
+					for(File file:subFiles){
+						if(file.isDirectory()){
+							List<URL> urls = getUrls(file);
+							jobClassLoaders.add(new JobClassLoader(urls.toArray(new URL[urls.size()])));
+							this.jobClassLoaderShouldBeClosed = true;
+						}else {
+							jobClassLoaders.add(this.executorClassLoader);
+							this.jobClassLoaderShouldBeClosed = false;
+						}
+					}
+				}
 			}
+			this.jobClassLoaders = jobClassLoaders;
 		} else {
-			this.jobClassLoader = jobClassLoader;
+			this.jobClassLoaders = jobClassLoaders;
 			this.jobClassLoaderShouldBeClosed = false;
 		}
 	}
@@ -153,37 +165,37 @@ public class Main {
 		}
 	}
 
-	private void startExecutor(Object saturnApplication) throws Exception {
+	private void startExecutor(Map<ClassLoader,Object> saturnApplications) throws Exception {
 		ClassLoader oldCL = Thread.currentThread().getContextClassLoader();
 		Thread.currentThread().setContextClassLoader(executorClassLoader);
 		try {
 			Class<?> startExecutorClass = getSaturnExecutorClass();
 			saturnExecutor = startExecutorClass
-					.getMethod("buildExecutor", String.class, String.class, ClassLoader.class, ClassLoader.class,
-							Object.class)
-					.invoke(null, namespace, executorName, executorClassLoader, jobClassLoader, saturnApplication);
+					.getMethod("buildExecutor", String.class, String.class, ClassLoader.class, List.class,
+							Map.class)
+					.invoke(null, namespace, executorName, executorClassLoader, jobClassLoaders, saturnApplications);
 			startExecutorClass.getMethod("execute").invoke(saturnExecutor);
 		} finally {
 			Thread.currentThread().setContextClassLoader(oldCL);
 		}
 	}
 
-	public void launch(String[] args, ClassLoader jobClassLoader) throws Exception {
+	public void launch(String[] args, List<ClassLoader> jobClassLoaders) throws Exception {
 		parseArgs(args);
-		initClassLoader(null, jobClassLoader);
+		initClassLoader(null, jobClassLoaders);
 		startExecutor(null);
 	}
 
-	public void launch(String[] args, ClassLoader jobClassLoader, Object saturnApplication) throws Exception {
+	public void launch(String[] args, List<ClassLoader> jobClassLoaders, Map<ClassLoader,Object> saturnApplications) throws Exception {
 		parseArgs(args);
-		initClassLoader(null, jobClassLoader);
-		startExecutor(saturnApplication);
+		initClassLoader(null, jobClassLoaders);
+		startExecutor(saturnApplications);
 	}
 
-	public void launchInner(String[] args, ClassLoader executorClassLoader, ClassLoader jobClassLoader)
+	public void launchInner(String[] args, ClassLoader executorClassLoader, List<ClassLoader> jobClassLoaders)
 			throws Exception {
 		parseArgs(args);
-		initClassLoader(executorClassLoader, jobClassLoader);
+		initClassLoader(executorClassLoader, jobClassLoaders);
 		startExecutor(null);
 	}
 
@@ -213,8 +225,12 @@ public class Main {
 
 	private void closeClassLoader() {
 		try {
-			if (jobClassLoaderShouldBeClosed && jobClassLoader != null && jobClassLoader instanceof Closeable) {
-				((Closeable) jobClassLoader).close();
+			if (jobClassLoaderShouldBeClosed && jobClassLoaders != null) {
+				for(ClassLoader cl:jobClassLoaders){
+					if(cl instanceof Closeable){
+						((Closeable) cl).close();
+					}
+				}
 			}
 		} catch (IOException e) { // NOSONAR
 		}
@@ -228,6 +244,7 @@ public class Main {
 	}
 
 	public static void main(String[] args) {
+		System.out.println(args[0]);
 		try {
 			Main main = new Main();
 			main.parseArgs(args);
